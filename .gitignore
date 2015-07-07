@@ -4,5 +4,4 @@ Pods/
 Podfile.lock
 xcuserdata/
 *.xcworkspace/
-android/gcm/app/*.json
 
