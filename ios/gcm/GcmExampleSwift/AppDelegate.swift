@@ -17,7 +17,7 @@
 import UIKit
 
 @UIApplicationMain
-class AppDelegate: UIResponder, UIApplicationDelegate, GGLInstanceIDDelegate {
+class AppDelegate: UIResponder, UIApplicationDelegate, GGLInstanceIDDelegate, GCMReceiverDelegate {
 
   var window: UIWindow?
 
@@ -43,16 +43,22 @@ class AppDelegate: UIResponder, UIApplicationDelegate, GGLInstanceIDDelegate {
     gcmSenderID = GGLContext.sharedInstance().configuration.gcmSenderID
     // [END_EXCLUDE]
     // Register for remote notifications
-    var types: UIUserNotificationType = UIUserNotificationType.Badge |
-        UIUserNotificationType.Alert |
-        UIUserNotificationType.Sound
-    var settings: UIUserNotificationSettings =
-        UIUserNotificationSettings( forTypes: types, categories: nil )
-    application.registerUserNotificationSettings( settings )
-    application.registerForRemoteNotifications()
+    if #available(iOS 8.0, *) {
+      let settings: UIUserNotificationSettings =
+          UIUserNotificationSettings(forTypes: [.Alert, .Badge, .Sound], categories: nil)
+      application.registerUserNotificationSettings(settings)
+      application.registerForRemoteNotifications()
+    } else {
+      // Fallback
+      let types: UIRemoteNotificationType = [.Alert, .Badge, .Sound]
+      application.registerForRemoteNotificationTypes(types)
+    }
+
   // [END register_for_remote_notifications]
   // [START start_gcm_service]
-    GCMService.sharedInstance().startWithConfig(GCMConfig.defaultConfig())
+    let gcmConfig = GCMConfig.defaultConfig()
+    gcmConfig.receiverDelegate = self
+    GCMService.sharedInstance().startWithConfig(gcmConfig)
   // [END start_gcm_service]
     return true
   }
@@ -66,9 +72,9 @@ class AppDelegate: UIResponder, UIApplicationDelegate, GGLInstanceIDDelegate {
           if (error != nil) {
             // Treat the "already subscribed" error more gently
             if error.code == 3001 {
-              println("Already subscribed to \(self.subscriptionTopic)")
+              print("Already subscribed to \(self.subscriptionTopic)")
             } else {
-              println("Subscription failed: \(error.localizedDescription)");
+              print("Subscription failed: \(error.localizedDescription)");
             }
           } else {
             self.subscribedToTopic = true;
@@ -84,10 +90,10 @@ class AppDelegate: UIResponder, UIApplicationDelegate, GGLInstanceIDDelegate {
     GCMService.sharedInstance().connectWithHandler({
         (NSError error) -> Void in
       if error != nil {
-        println("Could not connect to GCM: \(error.localizedDescription)")
+        print("Could not connect to GCM: \(error.localizedDescription)")
       } else {
         self.connectedToGCM = true
-        println("Connected to GCM")
+        print("Connected to GCM")
         // [START_EXCLUDE]
         self.subscribeToTopic()
         // [END_EXCLUDE]
@@ -110,9 +116,12 @@ class AppDelegate: UIResponder, UIApplicationDelegate, GGLInstanceIDDelegate {
       deviceToken: NSData ) {
   // [END receive_apns_token]
         // [START get_gcm_reg_token]
-        // Start the GGLInstanceID shared instance with the default config and request a registration
+        // Create a config and set a delegate that implements the GGLInstaceIDDelegate protocol.
+        let instanceIDConfig = GGLInstanceIDConfig.defaultConfig()
+        instanceIDConfig.delegate = self
+        // Start the GGLInstanceID shared instance with that config and request a registration
         // token to enable reception of notifications
-        GGLInstanceID.sharedInstance().startWithConfig(GGLInstanceIDConfig.defaultConfig())
+        GGLInstanceID.sharedInstance().startWithConfig(instanceIDConfig)
         registrationOptions = [kGGLInstanceIDRegisterAPNSOption:deviceToken,
           kGGLInstanceIDAPNSServerTypeSandboxOption:true]
         GGLInstanceID.sharedInstance().tokenWithAuthorizedEntity(gcmSenderID,
@@ -123,7 +132,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, GGLInstanceIDDelegate {
   // [START receive_apns_token_error]
   func application( application: UIApplication, didFailToRegisterForRemoteNotificationsWithError
       error: NSError ) {
-    println("Registration for remote notification failed with error: \(error.localizedDescription)")
+    print("Registration for remote notification failed with error: \(error.localizedDescription)")
   // [END receive_apns_token_error]
     let userInfo = ["error": error.localizedDescription]
     NSNotificationCenter.defaultCenter().postNotificationName(
@@ -133,7 +142,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, GGLInstanceIDDelegate {
   // [START ack_message_reception]
   func application( application: UIApplication,
     didReceiveRemoteNotification userInfo: [NSObject : AnyObject]) {
-      println("Notification received: \(userInfo)")
+      print("Notification received: \(userInfo)")
       // This works only if the app started the GCM service
       GCMService.sharedInstance().appDidReceiveMessage(userInfo);
       // Handle the received message
@@ -146,7 +155,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate, GGLInstanceIDDelegate {
   func application( application: UIApplication,
     didReceiveRemoteNotification userInfo: [NSObject : AnyObject],
     fetchCompletionHandler handler: (UIBackgroundFetchResult) -> Void) {
-      println("Notification received: \(userInfo)")
+      print("Notification received: \(userInfo)")
       // This works only if the app started the GCM service
       GCMService.sharedInstance().appDidReceiveMessage(userInfo);
       // Handle the received message
@@ -162,13 +171,13 @@ class AppDelegate: UIResponder, UIApplicationDelegate, GGLInstanceIDDelegate {
   func registrationHandler(registrationToken: String!, error: NSError!) {
     if (registrationToken != nil) {
       self.registrationToken = registrationToken
-      println("Registration Token: \(registrationToken)")
+      print("Registration Token: \(registrationToken)")
       self.subscribeToTopic()
       let userInfo = ["registrationToken": registrationToken]
       NSNotificationCenter.defaultCenter().postNotificationName(
         self.registrationKey, object: nil, userInfo: userInfo)
     } else {
-      println("Registration to GCM failed with error: \(error.localizedDescription)")
+      print("Registration to GCM failed with error: \(error.localizedDescription)")
       let userInfo = ["error": error.localizedDescription]
       NSNotificationCenter.defaultCenter().postNotificationName(
         self.registrationKey, object: nil, userInfo: userInfo)
@@ -178,10 +187,30 @@ class AppDelegate: UIResponder, UIApplicationDelegate, GGLInstanceIDDelegate {
   // [START on_token_refresh]
   func onTokenRefresh() {
     // A rotation of the registration tokens is happening, so the app needs to request a new token.
-    println("The GCM registration token needs to be changed.")
+    print("The GCM registration token needs to be changed.")
     GGLInstanceID.sharedInstance().tokenWithAuthorizedEntity(gcmSenderID,
         scope: kGGLInstanceIDScopeGCM, options: registrationOptions, handler: registrationHandler)
   }
   // [END on_token_refresh]
+
+  // [START upstream_callbacks]
+  func willSendDataMessageWithID(messageID: String!, error: NSError!) {
+    if (error != nil) {
+      // Failed to send the message.
+    } else {
+      // Will send message, you can save the messageID to track the message
+    }
+  }
+
+  func didSendDataMessageWithID(messageID: String!) {
+    // Did successfully send message identified by messageID
+  }
+  // [END upstream_callbacks]
+
+  func didDeleteMessagesOnServer() {
+    // Some messages sent to this device were deleted on the GCM server before reception, likely
+    // because the TTL expired. The client should notify the app server of this, so that the app
+    // server can resend those messages.
+  }
 
 }

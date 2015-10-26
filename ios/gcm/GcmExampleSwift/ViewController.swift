@@ -39,14 +39,14 @@ class ViewController: UIViewController {
       if let error = info["error"] {
         registeringLabel.text = "Error registering!"
         showAlert("Error registering with GCM", message: error)
-      } else if let registrationToken = info["registrationToken"] {
+      } else if let _ = info["registrationToken"] {
         registeringLabel.text = "Registered!"
         let message = "Check the xcode debug console for the registration token that you " +
         " can use with the demo server to send notifications to your device"
         showAlert("Registration Successful!", message: message)
       }
     } else {
-      println("Software failure. Guru meditation.")
+      print("Software failure. Guru meditation.")
     }
   }
 
@@ -56,16 +56,23 @@ class ViewController: UIViewController {
         showAlert("Message received", message: aps["alert"]!)
       }
     } else {
-      println("Software failure. Guru meditation.")
+      print("Software failure. Guru meditation.")
     }
   }
 
   func showAlert(title:String, message:String) {
-    let alert = UIAlertController(title: title,
-      message: message, preferredStyle: .Alert)
-    let dismissAction = UIAlertAction(title: "Dismiss", style: .Destructive, handler: nil)
-    alert.addAction(dismissAction)
-    self.presentViewController(alert, animated: true, completion: nil)
+    if #available(iOS 8.0, *) {
+      let alert = UIAlertController(title: title,
+          message: message, preferredStyle: .Alert)
+      let dismissAction = UIAlertAction(title: "Dismiss", style: .Destructive, handler: nil)
+      alert.addAction(dismissAction)
+      self.presentViewController(alert, animated: true, completion: nil)
+    } else {
+        // Fallback on earlier versions
+      let alert = UIAlertView.init(title: title, message: message, delegate: nil,
+          cancelButtonTitle: "Dismiss")
+      alert.show()
+    }
   }
 
   override func preferredStatusBarStyle() -> UIStatusBarStyle {

@@ -15,10 +15,16 @@
  */
 package com.google.samples.quickstart.signin;
 
+import android.Manifest;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.IntentSender;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.support.annotation.NonNull;
+import android.support.design.widget.Snackbar;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
@@ -26,12 +32,13 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import com.google.android.gms.common.ConnectionResult;
-import com.google.android.gms.common.GooglePlayServicesUtil;
+import com.google.android.gms.common.GoogleApiAvailability;
 import com.google.android.gms.common.Scopes;
 import com.google.android.gms.common.SignInButton;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.Scope;
 import com.google.android.gms.plus.Plus;
+import com.google.android.gms.plus.model.people.Person;
 
 
 /**
@@ -39,13 +46,17 @@ import com.google.android.gms.plus.Plus;
  */
 public class MainActivity extends AppCompatActivity implements
         View.OnClickListener,
+        ActivityCompat.OnRequestPermissionsResultCallback,
         GoogleApiClient.ConnectionCallbacks,
         GoogleApiClient.OnConnectionFailedListener {
 
     private static final String TAG = "MainActivity";
 
     /* RequestCode for resolutions involving sign-in */
-    private static final int RC_SIGN_IN = 9001;
+    private static final int RC_SIGN_IN = 1;
+
+    /* RequestCode for resolutions to get GET_ACCOUNTS permission on M */
+    private static final int RC_PERM_GET_ACCOUNTS = 2;
 
     /* Keys for persisting instance variables in savedInstanceState */
     private static final String KEY_IS_RESOLVING = "is_resolving";
@@ -57,11 +68,13 @@ public class MainActivity extends AppCompatActivity implements
     /* View to display current status (signed-in, signed-out, disconnected, etc) */
     private TextView mStatus;
 
+    // [START resolution_variables]
     /* Is there a ConnectionResult resolution in progress? */
     private boolean mIsResolving = false;
 
     /* Should we automatically resolve ConnectionResults when possible? */
     private boolean mShouldResolve = false;
+    // [END resolution_variables]
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -97,28 +110,87 @@ public class MainActivity extends AppCompatActivity implements
                 .addOnConnectionFailedListener(this)
                 .addApi(Plus.API)
                 .addScope(new Scope(Scopes.PROFILE))
+                .addScope(new Scope(Scopes.EMAIL))
                 .build();
         // [END create_google_api_client]
     }
 
     private void updateUI(boolean isSignedIn) {
         if (isSignedIn) {
-            // Show signed-in user's name
-            String name = Plus.PeopleApi.getCurrentPerson(mGoogleApiClient).getDisplayName();
-            mStatus.setText(getString(R.string.signed_in_fmt, name));
+            Person currentPerson = Plus.PeopleApi.getCurrentPerson(mGoogleApiClient);
+            if (currentPerson != null) {
+                // Show signed-in user's name
+                String name = currentPerson.getDisplayName();
+                mStatus.setText(getString(R.string.signed_in_fmt, name));
+
+                // Show users' email address (which requires GET_ACCOUNTS permission)
+                if (checkAccountsPermission()) {
+                    String currentAccount = Plus.AccountApi.getAccountName(mGoogleApiClient);
+                    ((TextView) findViewById(R.id.email)).setText(currentAccount);
+                }
+            } else {
+                // If getCurrentPerson returns null there is generally some error with the
+                // configuration of the application (invalid Client ID, Plus API not enabled, etc).
+                Log.w(TAG, getString(R.string.error_null_person));
+                mStatus.setText(getString(R.string.signed_in_err));
+            }
 
             // Set button visibility
             findViewById(R.id.sign_in_button).setVisibility(View.GONE);
             findViewById(R.id.sign_out_and_disconnect).setVisibility(View.VISIBLE);
         } else {
-            // Show signed-out message
+            // Show signed-out message and clear email field
             mStatus.setText(R.string.signed_out);
+            ((TextView) findViewById(R.id.email)).setText("");
 
             // Set button visibility
             findViewById(R.id.sign_in_button).setEnabled(true);
             findViewById(R.id.sign_in_button).setVisibility(View.VISIBLE);
             findViewById(R.id.sign_out_and_disconnect).setVisibility(View.GONE);
         }
+    }
+
+    /**
+     * Check if we have the GET_ACCOUNTS permission and request it if we do not.
+     * @return true if we have the permission, false if we do not.
+     */
+    private boolean checkAccountsPermission() {
+        final String perm = Manifest.permission.GET_ACCOUNTS;
+        int permissionCheck = ContextCompat.checkSelfPermission(this, perm);
+        if (permissionCheck == PackageManager.PERMISSION_GRANTED) {
+            // We have the permission
+            return true;
+        } else if (ActivityCompat.shouldShowRequestPermissionRationale(this, perm)) {
+            // Need to show permission rationale, display a snackbar and then request
+            // the permission again when the snackbar is dismissed.
+            Snackbar.make(findViewById(R.id.main_layout),
+                    R.string.contacts_permission_rationale,
+                    Snackbar.LENGTH_INDEFINITE)
+                    .setAction(android.R.string.ok, new View.OnClickListener() {
+                        @Override
+                        public void onClick(View v) {
+                            // Request the permission again.
+                            ActivityCompat.requestPermissions(MainActivity.this,
+                                    new String[]{perm},
+                                    RC_PERM_GET_ACCOUNTS);
+                        }
+                    }).show();
+            return false;
+        } else {
+            // No explanation needed, we can request the permission.
+            ActivityCompat.requestPermissions(this,
+                    new String[]{perm},
+                    RC_PERM_GET_ACCOUNTS);
+            return false;
+        }
+    }
+
+    private void showSignedInUI() {
+        updateUI(true);
+    }
+
+    private void showSignedOutUI() {
+        updateUI(false);
     }
 
     // [START on_start_on_stop]
@@ -140,7 +212,7 @@ public class MainActivity extends AppCompatActivity implements
     protected void onSaveInstanceState(Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putBoolean(KEY_IS_RESOLVING, mIsResolving);
-        outState.putBoolean(KEY_SHOULD_RESOLVE, mIsResolving);
+        outState.putBoolean(KEY_SHOULD_RESOLVE, mShouldResolve);
     }
     // [END on_save_instance_state]
 
@@ -151,7 +223,7 @@ public class MainActivity extends AppCompatActivity implements
         Log.d(TAG, "onActivityResult:" + requestCode + ":" + resultCode + ":" + data);
 
         if (requestCode == RC_SIGN_IN) {
-            // If the error resolution was not successful we should not resolve further errors.
+            // If the error resolution was not successful we should not resolve further.
             if (resultCode != RESULT_OK) {
                 mShouldResolve = false;
             }
@@ -163,15 +235,32 @@ public class MainActivity extends AppCompatActivity implements
     // [END on_activity_result]
 
     @Override
+    public void onRequestPermissionsResult(int requestCode,
+                                           @NonNull String permissions[],
+                                           @NonNull int[] grantResults) {
+        Log.d(TAG, "onRequestPermissionsResult:" + requestCode);
+        if (requestCode == RC_PERM_GET_ACCOUNTS) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                showSignedInUI();
+            } else {
+                Log.d(TAG, "GET_ACCOUNTS Permission Denied.");
+            }
+        }
+    }
+
+    // [START on_connected]
+    @Override
     public void onConnected(Bundle bundle) {
         // onConnected indicates that an account was selected on the device, that the selected
         // account has granted any requested permissions to our app and that we were able to
         // establish a service connection to Google Play services.
         Log.d(TAG, "onConnected:" + bundle);
+        mShouldResolve = false;
 
         // Show the signed-in UI
-        updateUI(true);
+        showSignedInUI();
     }
+    // [END on_connected]
 
     @Override
     public void onConnectionSuspended(int i) {
@@ -206,70 +295,89 @@ public class MainActivity extends AppCompatActivity implements
             }
         } else {
             // Show the signed-out UI
-            updateUI(false);
+            showSignedOutUI();
         }
     }
     // [END on_connection_failed]
 
     private void showErrorDialog(ConnectionResult connectionResult) {
-        int errorCode = connectionResult.getErrorCode();
+        GoogleApiAvailability apiAvailability = GoogleApiAvailability.getInstance();
+        int resultCode = apiAvailability.isGooglePlayServicesAvailable(this);
 
-        if (GooglePlayServicesUtil.isUserRecoverableError(errorCode)) {
-            // Show the default Google Play services error dialog which may still start an intent
-            // on our behalf if the user can resolve the issue.
-            GooglePlayServicesUtil.getErrorDialog(errorCode, this, RC_SIGN_IN,
-                    new DialogInterface.OnCancelListener() {
-                        @Override
-                        public void onCancel(DialogInterface dialog) {
-                            mShouldResolve = false;
-                            updateUI(false);
-                        }
-                    }).show();
-        } else {
-            // No default Google Play Services error, display a message to the user.
-            String errorString = getString(R.string.play_services_error_fmt, errorCode);
-            Toast.makeText(this, errorString, Toast.LENGTH_SHORT).show();
+        if (resultCode != ConnectionResult.SUCCESS) {
+            if (apiAvailability.isUserResolvableError(resultCode)) {
+                apiAvailability.getErrorDialog(this, resultCode, RC_SIGN_IN,
+                        new DialogInterface.OnCancelListener() {
+                            @Override
+                            public void onCancel(DialogInterface dialog) {
+                                mShouldResolve = false;
+                                showSignedOutUI();
+                            }
+                        }).show();
+            } else {
+                Log.w(TAG, "Google Play Services Error:" + connectionResult);
+                String errorString = apiAvailability.getErrorString(resultCode);
+                Toast.makeText(this, errorString, Toast.LENGTH_SHORT).show();
 
-            mShouldResolve = false;
-            updateUI(false);
+                mShouldResolve = false;
+                showSignedOutUI();
+            }
         }
     }
 
+    // [START on_click]
     @Override
     public void onClick(View v) {
         switch (v.getId()) {
             case R.id.sign_in_button:
-                // User clicked the sign-in button, so begin the sign-in process and automatically
-                // attempt to resolve any errors that occur.
-                mStatus.setText(R.string.signing_in);
-                // [START sign_in_clicked]
-                mShouldResolve = true;
-                mGoogleApiClient.connect();
-                // [END sign_in_clicked]
+                onSignInClicked();
                 break;
             case R.id.sign_out_button:
-                // Clear the default account so that GoogleApiClient will not automatically
-                // connect in the future.
-                // [START sign_out_clicked]
-                if (mGoogleApiClient.isConnected()) {
-                    Plus.AccountApi.clearDefaultAccount(mGoogleApiClient);
-                    mGoogleApiClient.disconnect();
-                }
-                // [END sign_out_clicked]
-                updateUI(false);
+                onSignOutClicked();
                 break;
             case R.id.disconnect_button:
-                // Revoke all granted permissions and clear the default account.  The user will have
-                // to pass the consent screen to sign in again.
-                // [START disconnect_clicked]
-                if (mGoogleApiClient.isConnected()) {
-                    Plus.AccountApi.clearDefaultAccount(mGoogleApiClient);
-                    Plus.AccountApi.revokeAccessAndDisconnect(mGoogleApiClient);
-                    mGoogleApiClient.disconnect();
-                }
-                // [END disconnect_clicked]
-                updateUI(false);
+                onDisconnectClicked();
                 break;
         }
     }
+    // [END on_click]
+
+    // [START on_sign_in_clicked]
+    private void onSignInClicked() {
+        // User clicked the sign-in button, so begin the sign-in process and automatically
+        // attempt to resolve any errors that occur.
+        mShouldResolve = true;
+        mGoogleApiClient.connect();
+
+        // Show a message to the user that we are signing in.
+        mStatus.setText(R.string.signing_in);
+    }
+    // [END on_sign_in_clicked]
+
+    // [START on_sign_out_clicked]
+    private void onSignOutClicked() {
+        // Clear the default account so that GoogleApiClient will not automatically
+        // connect in the future.
+        if (mGoogleApiClient.isConnected()) {
+            Plus.AccountApi.clearDefaultAccount(mGoogleApiClient);
+            mGoogleApiClient.disconnect();
+        }
+
+        showSignedOutUI();
+    }
+    // [END on_sign_out_clicked]
+
+    // [START on_disconnect_clicked]
+    private void onDisconnectClicked() {
+        // Revoke all granted permissions and clear the default account.  The user will have
+        // to pass the consent screen to sign in again.
+        if (mGoogleApiClient.isConnected()) {
+            Plus.AccountApi.clearDefaultAccount(mGoogleApiClient);
+            Plus.AccountApi.revokeAccessAndDisconnect(mGoogleApiClient);
+            mGoogleApiClient.disconnect();
+        }
+
+        showSignedOutUI();
+    }
+    // [END on_disconnect_clicked]
 }

@@ -5,5 +5,4 @@ build/
 /local.properties
 .DS_Store
 /captures
-gradle.properties
-app/*.json
+google-services.json
