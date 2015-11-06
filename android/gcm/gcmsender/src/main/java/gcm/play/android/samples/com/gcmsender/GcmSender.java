@@ -50,6 +50,7 @@ public class GcmSender {
         try {
             // Prepare JSON containing the GCM message content. What to send and where to send.
             JSONObject jGcmData = new JSONObject();
+            //JSONObject jNotification = new JSONObject();
             JSONObject jData = new JSONObject();
             jData.put("message", args[0].trim());
             // Where to send GCM message.
@@ -58,8 +59,22 @@ public class GcmSender {
             } else {
                 jGcmData.put("to", "/topics/global");
             }
+            jGcmData.put("priority", "high");
+            jGcmData.put("content_available", true);
+            jGcmData.put("restricted_package_name", "gcm.play.android.samples.com.gcmquickstart");
+
+            //jNotification.put("title", "Gcm Notification Title");
+            //jNotification.put("body", "Gcm Notification Body");
+            //jNotification.put("icon", "ic_stat_ic_notification");
+            //jNotification.put("sound", "default");
+            //jNotification.put("click_action", "OPEN_ACTIVITY_1");
+
+            //jGcmData.put("notification", jNotification);
+
             // What to send in GCM message.
             jGcmData.put("data", jData);
+
+
 
             // Create connection to send GCM Message request.
             URL url = new URL("https://android.googleapis.com/gcm/send");
